@@ -21,7 +21,7 @@ module.exports = function(RED) {
 
         const sharp = require('sharp');
 
-        async function convertImageToRaster(imagePath) {
+        async function convertImageToRaster(imagePath, alignment = "center" ) {
             try {
                 const width = 384; // máximo común para muchas térmicas
 
@@ -48,6 +48,9 @@ module.exports = function(RED) {
                     }
                 }
 
+                const alignCommand = alignment === 'center' ? ALIGN_CENTER : alignment === 'right' ? ALIGN_RIGHT : ALIGN_LEFT;
+
+
                 const header = Buffer.from([
                     0x1D, 0x76, 0x30, 0x00,
                     widthBytes & 0xFF,
@@ -56,7 +59,7 @@ module.exports = function(RED) {
                     (height >> 8) & 0xFF
                 ]);
 
-                return Buffer.concat([header, rasterData]);
+                return Buffer.concat([alignCommand, header, rasterData]);
             } catch (err) {
                 console.error("Image conversion failed:", err);
                 return null;
@@ -67,7 +70,7 @@ module.exports = function(RED) {
             const font = config.fontType || "A";
             const width = parseInt(config.width) || 1;
             const height = parseInt(config.height) || 1;
-            const align = config.alignment || "left";
+            const align = config.alignment || "center";
             const bold = config.bold || false;
             const invert = config.invert || false;
             const smooth = config.smooth || false;
@@ -75,15 +78,6 @@ module.exports = function(RED) {
             const printerIp = config.ip;
             const printerPort = parseInt(config.port) || 9100;
             let bufferParts = [];
-
-            if (msg.image) {
-                const imageBuffer = await convertImageToRaster(msg.image);
-                if (imageBuffer) {
-                    bufferParts.push(imageBuffer);
-                } else {
-                    node.warn("No se pudo convertir la imagen.");
-                }
-            }
 
             let text = config.text ? config.text.trim() : (msg.payload || "").toString().trim();
 
@@ -111,6 +105,16 @@ module.exports = function(RED) {
                 ]);
                 bufferParts.push(textBuffer);
             }
+
+            if (msg.image) {
+                const imageBuffer = await convertImageToRaster(msg.image);
+                if (imageBuffer) {
+                    bufferParts.push(imageBuffer);
+                } else {
+                    node.warn("No se pudo convertir la imagen.");
+                }
+            }
+
 
             let buffer = Buffer.concat(bufferParts);
 
