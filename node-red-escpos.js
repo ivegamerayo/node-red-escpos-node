@@ -19,7 +19,47 @@ module.exports = function(RED) {
         const CUT_FULL = Buffer.from([0x1D, 0x56, 0x00]);
         const PRINT_FEED = Buffer.from([0x1b, 0x64, 0x06]); // Feed 6 lines before cutting
 
-        node.on('input', function(msg) {
+        const sharp = require('sharp');
+
+        async function convertImageToRaster(imagePath) {
+            try {
+                const image = await sharp(imagePath)
+                    .resize({ width: 384 }) // Ajusta según el ancho de tu impresora
+                    .threshold(128) // Convierte la imagen a blanco y negro
+                    .raw()
+                    .toBuffer({ resolveWithObject: true });
+        
+                const { data, info } = image;
+                const widthBytes = Math.ceil(info.width / 8);
+                const height = info.height;
+        
+                let rasterData = Buffer.alloc(widthBytes * height);
+        
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < info.width; x++) {
+                        const pixel = data[y * info.width + x];
+                        if (pixel === 0) {
+                            rasterData[y * widthBytes + (x >> 3)] |= (0x80 >> (x % 8));
+                        }
+                    }
+                }
+        
+                const header = Buffer.from([
+                    0x1D, 0x76, 0x30, 0x00, // Comando de imagen raster
+                    widthBytes & 0xFF,
+                    (widthBytes >> 8) & 0xFF,
+                    height & 0xFF,
+                    (height >> 8) & 0xFF
+                ]);
+        
+                return Buffer.concat([header, rasterData]);
+            } catch (err) {
+                console.error("Image conversion failed:", err);
+                return null;
+            }
+        }
+
+        node.on('input', async function(msg) {
             // Retrieve user selections from node config
             const font = config.fontType || "A";
             const width = parseInt(config.width) || 1;
@@ -31,6 +71,17 @@ module.exports = function(RED) {
             const cut = config.cutAfterPrint || false;
             const printerIp = config.ip;
             const printerPort = parseInt(config.port) || 9100;
+            let bufferParts = [];
+
+            // Si el mensaje tiene una imagen, la convertimos
+            if (msg.image) {
+                const imageBuffer = await convertImageToRaster(msg.image);
+                if (imageBuffer) {
+                    bufferParts.push(imageBuffer); // Agregamos la imagen convertida al buffer
+                } else {
+                    node.warn("No se pudo convertir la imagen.");
+                }
+            }
             let text = config.text ? config.text.trim() : (msg.payload || "").toString().trim();
 
             if (!text) {
@@ -47,7 +98,7 @@ module.exports = function(RED) {
             let sizeCommand = Buffer.from([0x1D, 0x21, (width - 1) * 0x10 + (height - 1)]); // GS ! n
 
             // Construct the buffer
-            let buffer = Buffer.concat([
+            let textBuffer = Buffer.concat([
                 sizeCommand,
                 fontCommand,
                 alignCommand,
@@ -57,9 +108,11 @@ module.exports = function(RED) {
                 Buffer.from(text + '\n')
             ]);
 
+            bufferParts.push(textBuffer);
+
             // Add cut command if enabled
             if (cut) {
-                buffer = Buffer.concat([buffer, PRINT_FEED, CUT_FULL]);
+                buffer = Buffer.concat([bufferParts, PRINT_FEED, CUT_FULL]);
             }
 
             // Create TCP Client

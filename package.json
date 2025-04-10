@@ -22,10 +22,13 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "node-red" : {
+  "node-red": {
     "version": ">=2.2.2",
     "nodes": {
       "node-red-escpos": "node-red-escpos.js"
     }
+  },
+  "dependencies": {
+    "sharp": "^0.34.1"
   }
 }
