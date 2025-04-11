@@ -21,7 +21,7 @@ module.exports = function (RED) {
 
         const sharp = require('sharp');
 
-        async function convertImageToRaster(imagePath, alignment = "center") {
+        async function convertImageToRaster(imagePath, alignment = "center" ) {
             try {
                 const width = 384; // máximo común para muchas térmicas
 
