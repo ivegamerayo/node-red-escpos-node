@@ -1,4 +1,4 @@
-module.exports = function(RED) {
+module.exports = function (RED) {
     function EscPosPrinter(config) {
         RED.nodes.createNode(this, config);
         var node = this;
@@ -21,7 +21,7 @@ module.exports = function(RED) {
 
         const sharp = require('sharp');
 
-        async function convertImageToRaster(imagePath, alignment = "center" ) {
+        async function convertImageToRaster(imagePath, alignment = "center") {
             try {
                 const width = 384; // máximo común para muchas térmicas
 
@@ -66,7 +66,7 @@ module.exports = function(RED) {
             }
         }
 
-        node.on('input', async function(msg) {
+        node.on('input', async function (msg) {
             const font = config.fontType || "A";
             const width = parseInt(config.width) || 1;
             const height = parseInt(config.height) || 1;
@@ -107,12 +107,21 @@ module.exports = function(RED) {
             }
 
             if (msg.image) {
-                const imageBuffer = await convertImageToRaster(msg.image);
-                if (imageBuffer) {
-                    bufferParts.push(imageBuffer);
-                } else {
-                    node.warn("No se pudo convertir la imagen.");
-                }
+                const imagePromises = Object.entries(msg.image).map(async ([key, value]) => {
+                    const imageBuffer = await convertImageToRaster(value);
+                    if (imageBuffer) {
+                        return imageBuffer;
+                    } else {
+                        node.warn("Image conversion failed");
+                        node.warn("msg.image format should be: { key: imageBuffer }");
+                        return null;
+                    }
+                });
+                
+                const imageBuffers = await Promise.all(imagePromises);
+                imageBuffers.forEach(buffer => {
+                    if (buffer) bufferParts.push(buffer);
+                });
             }
 
 
