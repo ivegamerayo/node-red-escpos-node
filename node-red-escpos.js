@@ -1,4 +1,4 @@
-module.exports = function(RED) {
+module.exports = function (RED) {
     function EscPosPrinter(config) {
         RED.nodes.createNode(this, config);
         var node = this;
@@ -19,50 +19,118 @@ module.exports = function(RED) {
         const CUT_FULL = Buffer.from([0x1D, 0x56, 0x00]);
         const PRINT_FEED = Buffer.from([0x1b, 0x64, 0x06]); // Feed 6 lines before cutting
 
-        node.on('input', function(msg) {
-            // Retrieve user selections from node config
+        const sharp = require('sharp');
+
+        async function convertImageToRaster(imagePath, alignment = "center" ) {
+            try {
+                const width = 384; // máximo común para muchas térmicas
+
+                const rawImage = await sharp(imagePath)
+                    .resize({ width })
+                    .grayscale()
+                    .threshold(128)
+                    .raw()
+                    .toBuffer({ resolveWithObject: true });
+
+                const { data, info } = rawImage;
+                const widthBytes = Math.ceil(info.width / 8);
+                const height = info.height;
+
+                const rasterData = Buffer.alloc(widthBytes * height, 0);
+
+                for (let y = 0; y < height; y++) {
+                    for (let x = 0; x < info.width; x++) {
+                        const pixel = data[y * info.width + x];
+                        if (pixel === 0) {
+                            const byteIndex = y * widthBytes + Math.floor(x / 8);
+                            rasterData[byteIndex] |= 0x80 >> (x % 8);
+                        }
+                    }
+                }
+
+                const alignCommand = alignment === 'center' ? ALIGN_CENTER : alignment === 'right' ? ALIGN_RIGHT : ALIGN_LEFT;
+
+
+                const header = Buffer.from([
+                    0x1D, 0x76, 0x30, 0x00,
+                    widthBytes & 0xFF,
+                    (widthBytes >> 8) & 0xFF,
+                    height & 0xFF,
+                    (height >> 8) & 0xFF
+                ]);
+
+                return Buffer.concat([alignCommand, header, rasterData]);
+            } catch (err) {
+                console.error("Image conversion failed:", err);
+                return null;
+            }
+        }
+
+        node.on('input', async function (msg) {
             const font = config.fontType || "A";
             const width = parseInt(config.width) || 1;
             const height = parseInt(config.height) || 1;
-            const align = config.alignment || "left";
+            const align = config.alignment || "center";
             const bold = config.bold || false;
             const invert = config.invert || false;
             const smooth = config.smooth || false;
             const cut = config.cutAfterPrint || false;
             const printerIp = config.ip;
             const printerPort = parseInt(config.port) || 9100;
+            let bufferParts = [];
+
             let text = config.text ? config.text.trim() : (msg.payload || "").toString().trim();
 
-            if (!text) {
-                node.warn("No text to print, skipping...");
+            if (!text && bufferParts.length === 0) {
+                node.warn("No text or image to print, skipping...");
                 return;
             }
 
-            // Map user inputs to ESC/POS commands
             let fontCommand = font.toLowerCase() === 'a' ? FONT_A : FONT_B;
             let alignCommand = align === "left" ? ALIGN_LEFT : align === "center" ? ALIGN_CENTER : ALIGN_RIGHT;
             let boldCommand = bold ? BOLD_ON : BOLD_OFF;
             let invertCommand = invert ? INVERT_ON : INVERT_OFF;
             let smoothCommand = smooth ? SMOOTH_ON : SMOOTH_OFF;
-            let sizeCommand = Buffer.from([0x1D, 0x21, (width - 1) * 0x10 + (height - 1)]); // GS ! n
+            let sizeCommand = Buffer.from([0x1D, 0x21, (width - 1) * 0x10 + (height - 1)]);
 
-            // Construct the buffer
-            let buffer = Buffer.concat([
-                sizeCommand,
-                fontCommand,
-                alignCommand,
-                boldCommand,
-                invertCommand,
-                smoothCommand,
-                Buffer.from(text + '\n')
-            ]);
+            if (text) {
+                let textBuffer = Buffer.concat([
+                    sizeCommand,
+                    fontCommand,
+                    alignCommand,
+                    boldCommand,
+                    invertCommand,
+                    smoothCommand,
+                    Buffer.from(text + '\n')
+                ]);
+                bufferParts.push(textBuffer);
+            }
 
-            // Add cut command if enabled
+            if (msg.image) {
+                const imagePromises = Object.entries(msg.image).map(async ([key, value]) => {
+                    const imageBuffer = await convertImageToRaster(value);
+                    if (imageBuffer) {
+                        return imageBuffer;
+                    } else {
+                        node.warn("Image conversion failed");
+                        node.warn("msg.image format should be: { key: imageBuffer }");
+                        return null;
+                    }
+                });
+                
+                const imageBuffers = await Promise.all(imagePromises);
+                imageBuffers.forEach(buffer => {
+                    if (buffer) bufferParts.push(buffer);
+                });
+            }
+
+
+            let buffer = Buffer.concat(bufferParts);
+
             if (cut) {
                 buffer = Buffer.concat([buffer, PRINT_FEED, CUT_FULL]);
             }
 
-            // Create TCP Client
             const client = new net.Socket();
             node.status({ fill: "yellow", shape: "dot", text: "Connecting" });
             node.log(`Connecting to printer at ${printerIp}:${printerPort}`);
@@ -74,7 +142,7 @@ module.exports = function(RED) {
                 client.write(buffer, () => {
                     node.status({ fill: "green", shape: "dot", text: "Printing successful" });
                     node.log("Print job sent successfully.");
-                    client.end(); // Close connection after sending data
+                    client.end();
                 });
             });
 
@@ -90,13 +158,10 @@ module.exports = function(RED) {
                 client.destroy();
             });
 
-            
             client.on('close', () => {
-                //node.status({ fill: "grey", shape: "ring", text: "Disconnected" });
                 node.log("Connection to printer closed.");
             });
 
-            //msg.payload = "Print job sent to printer";
             node.send(msg);
         });
     }

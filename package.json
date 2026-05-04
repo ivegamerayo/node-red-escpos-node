@@ -1,6 +1,6 @@
 {
   "name": "@nero2201/node-red-escpos-node",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A node for communicating with compatible ESC/POS receipt printers over a network.",
   "engines": {
     "node": ">=10.0.0",
@@ -22,10 +22,13 @@
     "access": "public",
     "registry": "https://registry.npmjs.org/"
   },
-  "node-red" : {
+  "node-red": {
     "version": ">=2.2.2",
     "nodes": {
       "node-red-escpos": "node-red-escpos.js"
     }
+  },
+  "dependencies": {
+    "sharp": "^0.34.1"
   }
 }
