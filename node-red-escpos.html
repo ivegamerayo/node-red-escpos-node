@@ -89,7 +89,21 @@
     </dl>
     <h3>Outputs</h3>
     <dl class="message-properties">
-        <dt>payload <span class="property-type">string</span></dt>
-        <dd>Returns a confirmation message when printing is done.</dd>
+        <dt>payload <span class="property-type">string|object</span></dt>
+        <dd>Confirmation message or error object on failure.</dd>
+        <dt>paperStatus <span class="property-type">object</span></dt>
+        <dd>Printer paper status check result after print job.</dd>
     </dl>
+    <h3>paperStatus properties</h3>
+    <table class="properties">
+        <thead><tr><th>Property</th><th>Type</th><th>Description</th></tr></thead>
+        <tbody>
+            <tr><td>ok</td><td>boolean</td><td>True if print completed with paper available.</td></tr>
+            <tr><td>paperOut</td><td>boolean</td><td>True if printer is out of paper.</td></tr>
+            <tr><td>nearEnd</td><td>boolean</td><td>True if paper is near the end (warning).</td></tr>
+            <tr><td>raw</td><td>number</td><td>Raw status byte from the printer.</td></tr>
+            <tr><td>checkedBefore</td><td>boolean</td><td>Set when paper-out was detected before printing.</td></tr>
+            <tr><td>checkedAfter</td><td>boolean</td><td>Set when paper-out was detected after printing.</td></tr>
+        </tbody>
+    </table>
 </script>
